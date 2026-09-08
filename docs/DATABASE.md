@@ -160,20 +160,21 @@ Use `DATETIME(6)` for business timestamps where practical so event dates are not
 13. `registration_answers`
 14. `tickets`
 15. `check_ins`
-16. `media_files`
-17. `activity_logs`
+16. `event_reminder_sends`
+17. `media_files`
+18. `activity_logs`
 
 ## 2.2 Conditional Laravel Infrastructure Tables
 
 These tables are required only when the corresponding Laravel-native database driver is selected:
 
-18. `password_reset_tokens`
-19. `sessions`
-20. `jobs`
-21. `failed_jobs`
-22. `cache`
-23. `cache_locks`
-24. `migrations`
+19. `password_reset_tokens`
+20. `sessions`
+21. `jobs`
+22. `failed_jobs`
+23. `cache`
+24. `cache_locks`
+25. `migrations`
 
 The exact framework-generated schema shall be taken from the verified installed Laravel version. The logical requirements are documented here, but migrations must not be handwritten from assumptions.
 
@@ -222,6 +223,7 @@ Roles are intentionally represented as a controlled value on `organization_membe
 | `registration_answers` | Custom-field answers with historical field snapshots |
 | `tickets` | Unique ticket and QR identity for a registration |
 | `check_ins` | One authoritative attendance record per registration |
+| `event_reminder_sends` | Idempotent per-occurrence marker for event reminder emails |
 | `media_files` | Metadata and ownership for organization/event uploaded assets |
 | `activity_logs` | Immutable business audit trail |
 
@@ -435,6 +437,14 @@ erDiagram
         DATETIME created_at
     }
 
+    EVENT_REMINDER_SENDS {
+        BIGINT id PK
+        BIGINT event_id FK
+        VARCHAR occurrence_key
+        DATETIME sent_at
+        DATETIME created_at
+    }
+
     MEDIA_FILES {
         BIGINT id PK
         BIGINT organization_id FK
@@ -501,6 +511,8 @@ erDiagram
     TICKETS ||--o| CHECK_INS : scanned_by
     USERS ||--o{ CHECK_INS : operates
 
+    EVENTS ||--o{ EVENT_REMINDER_SENDS : pings
+
     ORGANIZATIONS ||--o{ MEDIA_FILES : owns
     EVENTS ||--o{ MEDIA_FILES : uses
     USERS ||--o{ MEDIA_FILES : uploads
@@ -518,6 +530,7 @@ erDiagram
 4. A check-in is linked to the event transitively through its registration.
 5. Check-in state is not stored on `registrations`; it is derived from existence of a `check_ins` row.
 6. Remaining capacity is not stored.
+7. `EVENT_REMINDER_SENDS` records one marker per intended reminder occurrence (`(event_id, occurrence_key)` unique) so a scheduler double-run cannot duplicate the reminder.
 
 ---
 
@@ -859,6 +872,8 @@ The event is the central aggregate for registration, ticketing, check-in, report
 | `capacity` | INT UNSIGNED | Yes | NULL | Overall event capacity; NULL = unlimited |
 | `require_phone` | BOOLEAN | No | `FALSE` | Phone required on default registration fields |
 | `require_organization` | BOOLEAN | No | `FALSE` | Organization name required |
+| `reminder_enabled` | BOOLEAN | No | `FALSE` | Event reminder feature flag |
+| `reminder_hours_before` | INT UNSIGNED | Yes | NULL | Hours before `start_at` to send a single reminder; required when enabled |
 | `published_at` | DATETIME(6) | Yes | NULL | First/latest publication timestamp per final business rule |
 | `started_at` | DATETIME(6) | Yes | NULL | Ongoing transition timestamp |
 | `completed_at` | DATETIME(6) | Yes | NULL | Completion timestamp |
@@ -1266,7 +1281,7 @@ A registration is not a user account.
 | `event_id` | BIGINT UNSIGNED | No | — | Event |
 | `ticket_type_id` | BIGINT UNSIGNED | Yes | NULL | Selected ticket type |
 | `cancelled_by_user_id` | BIGINT UNSIGNED | Yes | NULL | Authorized cancellation actor |
-| `registration_code` | CHAR(26) | No | — | Non-sequential public registration reference, ULID-compatible |
+| `registration_code` | CHAR(26) | No | — | Non-sequential public registration reference, random 26-char hex |
 | `status` | VARCHAR(20) | No | — | Derived MVP values: `confirmed`, `cancelled` |
 | `attendee_name` | VARCHAR(150) | No | — | Attendee name |
 | `attendee_email` | VARCHAR(254) | No | — | Attendee email |
@@ -1694,163 +1709,52 @@ Multiple identical actions may legitimately occur at different times.
 
 ---
 
-# 22. Laravel Infrastructure Tables
+# 22. Table: `event_reminder_sends`
 
-These tables support Laravel-native functionality but are not business-domain entities.
+## 22.1 Purpose
 
-Exact migrations must come from the verified project/framework version.
+Idempotency ledger for scheduler-driven event reminders.
 
----
+One row is inserted per intended reminder occurrence before any reminder job is dispatched, so a scheduler double-run (or overlapping run) cannot duplicate the same intended reminder to the same event.
 
-## 22.1 `password_reset_tokens`
+The row guarantees FR-NOT-004 / BUSINESS_FLOW §20: no duplicate intended occurrence on repeated scheduler execution.
 
-### Purpose
+## 22.2 Columns
 
-Supports time-limited password reset.
+| Column | Type | Null | Default | Description |
+|---|---|---|---:|---|
+| `id` | BIGINT UNSIGNED | No | Auto | Primary key |
+| `event_id` | BIGINT UNSIGNED | No | — | Event the reminder belongs to |
+| `occurrence_key` | VARCHAR(255) | No | — | Stable per-occurrence key (`reminder:{start_at unix}`) |
+| `sent_at` | DATETIME(6) | No | — | When the occurrence was processed |
+| `created_at` | DATETIME(6) | No | App-managed | Persistence timestamp |
 
-### Logical Columns
+No `updated_at` is required because a marker is append-once.
 
-| Column | Logical Type | Notes |
-|---|---|---|
-| `email` | VARCHAR | Lookup identity; typically indexed/primary |
-| `token` | VARCHAR | Hashed reset token |
-| `created_at` | DATETIME/TIMESTAMP | Used for expiry |
+## 22.3 Primary Key
 
-### Constraints
+- `PRIMARY KEY (id)`
 
-- token must not be stored as plaintext if the framework's verified implementation hashes it.
-- expired/used reset tokens must not remain valid.
+## 22.4 Foreign Keys
 
----
+- `event_id → events.id` — `RESTRICT`
 
-## 22.2 `sessions`
+## 22.5 Unique Constraints
 
-### Purpose
+- `UNIQUE (event_id, occurrence_key)`
 
-Supports database-backed production session management.
+This is the database-level guard against duplicate intended occurrences.
 
-### Logical Columns
+## 22.6 Indexes
 
-Typical Laravel-generated session schema includes:
+- `INDEX (occurrence_key)`
 
-- session `id`
-- nullable `user_id`
-- IP address
-- user agent
-- serialized/encrypted session payload
-- last activity timestamp/integer
+## 22.7 Constraints
 
-### Indexes
-
-At minimum:
-
-- primary/unique session ID
-- user ID index
-- last activity index
-
-### Rule
-
-Use the generated Laravel schema from the installed version.
-
----
-
-## 22.3 `jobs`
-
-### Purpose
-
-Stores pending queue jobs when database queue driver is selected.
-
-### Logical Fields
-
-Typically includes:
-
-- queue name
-- serialized payload
-- attempts
-- reservation timestamp
-- availability timestamp
-- creation timestamp
-
-### Index
-
-- queue lookup index
-
-### Rule
-
-Business transactions shall dispatch queue jobs only after commit when the job depends on newly committed records.
-
----
-
-## 22.4 `failed_jobs`
-
-### Purpose
-
-Stores exhausted/failed queued jobs for operational visibility.
-
-### Logical Fields
-
-Typically includes:
-
-- UUID
-- connection
-- queue
-- payload
-- exception
-- failure timestamp
-
-### Unique Constraint
-
-- job UUID unique
-
----
-
-## 22.5 `cache`
-
-### Purpose
-
-Used only if Laravel database cache driver is selected.
-
-Cache is never authoritative EventFlow business data.
-
-### Logical Fields
-
-- cache key
-- cached value
-- expiration
-
-### Constraint
-
-- key unique/primary
-
----
-
-## 22.6 `cache_locks`
-
-### Purpose
-
-Supports database-backed cache locks if selected.
-
-### Logical Fields
-
-- lock key
-- owner
-- expiration
-
-### Constraint
-
-- key unique/primary
-
----
-
-## 22.7 `migrations`
-
-### Purpose
-
-Laravel schema migration history.
-
-### Rule
-
-This table is framework infrastructure and should use Laravel-generated schema.
+- Reminder dispatch selects only registrations with status `confirmed` and `cancelled_at IS NULL` on eligible events.
+- Events in `draft`, `completed`, `cancelled`, or `archived` status are not eligible.
+- A reminder is only sent inside its due window: `start_at - reminder_hours_before <= now < start_at`.
+- The event row is locked (`FOR UPDATE`) inside the marker transaction so two overlapping scheduler runs cannot both dispatch.
 
 ---
 
@@ -1885,8 +1789,8 @@ This keeps joins and indexes efficient.
 
 Recommended:
 
-- `registration_code CHAR(26)` using ULID-compatible representation
-- `ticket_code CHAR(26)` using ULID-compatible representation
+- `registration_code CHAR(26)` cryptographically random, 26-char hex (104-bit)
+- `ticket_code CHAR(26)` cryptographically random, 26-char hex (104-bit)
 - `qr_token CHAR(64)` high-entropy token
 - `public_slug VARCHAR(180)` for event pages
 
@@ -1949,6 +1853,7 @@ Required uniqueness:
 | `tickets` | `ticket_code` |
 | `tickets` | `qr_token` |
 | `check_ins` | `registration_id` |
+| `event_reminder_sends` | `(event_id, occurrence_key)` |
 | `media_files` | `(disk, path)` |
 | `organization_settings` | `(organization_id, setting_key)` |
 
@@ -2124,6 +2029,7 @@ Must use FKs:
 - answer → registration/field
 - ticket → registration
 - check-in → registration/ticket/operator
+- event reminder send → event
 - media → organization/event/uploader
 - activity → organization/event/actor
 
@@ -2199,6 +2105,10 @@ Eligibility derives from registration/event state.
 ### `check_ins`
 
 Attendance is an immutable operational record in MVP.
+
+### `event_reminder_sends`
+
+Marker is append-only and never soft-deleted.
 
 ### `activity_logs`
 
@@ -2942,7 +2852,7 @@ Cache may hold short-lived computed values but MySQL operational records remain 
 | State/role/method | VARCHAR + CHECK |
 | Money | DECIMAL(12,2) |
 | Currency | CHAR(3) |
-| Public ULID-like code | CHAR(26) |
+| Non-sequential random public code (26-char hex) | CHAR(26) |
 | High-entropy token | CHAR(64) |
 | Boolean | BOOLEAN / TINYINT(1) |
 | Capacity/count | INT UNSIGNED |
@@ -3122,6 +3032,8 @@ tickets
     ↓
 check_ins
     ↓
+event_reminder_sends
+    ↓
 activity_logs
 ```
 
@@ -3175,6 +3087,166 @@ The design intentionally avoids:
 - unnecessary polymorphic domain models.
 
 This keeps the EventFlow MVP commercially reusable, Laravel-friendly, maintainable, and ready for later expansion.
+
+---
+
+# 49. Laravel Infrastructure Tables
+
+These tables support Laravel-native functionality but are not business-domain entities.
+
+Exact migrations must come from the verified project/framework version.
+
+---
+
+## 49.1 `password_reset_tokens`
+
+### Purpose
+
+Supports time-limited password reset.
+
+### Logical Columns
+
+| Column | Logical Type | Notes |
+|---|---|---|
+| `email` | VARCHAR | Lookup identity; typically indexed/primary |
+| `token` | VARCHAR | Hashed reset token |
+| `created_at` | DATETIME/TIMESTAMP | Used for expiry |
+
+### Constraints
+
+- token must not be stored as plaintext if the framework's verified implementation hashes it.
+- expired/used reset tokens must not remain valid.
+
+---
+
+## 49.2 `sessions`
+
+### Purpose
+
+Supports database-backed production session management.
+
+### Logical Columns
+
+Typical Laravel-generated session schema includes:
+
+- session `id`
+- nullable `user_id`
+- IP address
+- user agent
+- serialized/encrypted session payload
+- last activity timestamp/integer
+
+### Indexes
+
+At minimum:
+
+- primary/unique session ID
+- user ID index
+- last activity index
+
+### Rule
+
+Use the generated Laravel schema from the installed version.
+
+---
+
+## 49.3 `jobs`
+
+### Purpose
+
+Stores pending queue jobs when database queue driver is selected.
+
+### Logical Fields
+
+Typically includes:
+
+- queue name
+- serialized payload
+- attempts
+- reservation timestamp
+- availability timestamp
+- creation timestamp
+
+### Index
+
+- queue lookup index
+
+### Rule
+
+Business transactions shall dispatch queue jobs only after commit when the job depends on newly committed records.
+
+---
+
+## 49.4 `failed_jobs`
+
+### Purpose
+
+Stores exhausted/failed queued jobs for operational visibility.
+
+### Logical Fields
+
+Typically includes:
+
+- UUID
+- connection
+- queue
+- payload
+- exception
+- failure timestamp
+
+### Unique Constraint
+
+- job UUID unique
+
+---
+
+## 49.5 `cache`
+
+### Purpose
+
+Used only if Laravel database cache driver is selected.
+
+Cache is never authoritative EventFlow business data.
+
+### Logical Fields
+
+- cache key
+- cached value
+- expiration
+
+### Constraint
+
+- key unique/primary
+
+---
+
+## 49.6 `cache_locks`
+
+### Purpose
+
+Supports database-backed cache locks if selected.
+
+### Logical Fields
+
+- lock key
+- owner
+- expiration
+
+### Constraint
+
+- key unique/primary
+
+---
+
+## 49.7 `migrations`
+
+### Purpose
+
+Laravel schema migration history.
+
+### Rule
+
+This table is framework infrastructure and should use Laravel-generated schema.
 
 ---
 

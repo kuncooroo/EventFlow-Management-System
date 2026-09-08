@@ -5,6 +5,7 @@ namespace App\Actions\Organizations;
 use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\User;
+use App\Support\Demo\DemoGate;
 use App\Support\Organization\OrganizationOwnerGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -20,6 +21,11 @@ class RemoveMember
         User $actor,
         Organization $organization,
     ): OrganizationMembership {
+        DemoGate::denyOnDemoOrganization(
+            $organization->id,
+            __('Demo mode does not allow removing members.'),
+        );
+
         $this->assertMembershipInOrganization($membership, $organization);
         $this->assertActorCanManage($actor, $organization);
 

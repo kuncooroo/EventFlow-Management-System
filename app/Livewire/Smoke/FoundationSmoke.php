@@ -12,6 +12,11 @@ class FoundationSmoke extends Component
 {
     public bool $alpineReady = false;
 
+    public function mount(): void
+    {
+        abort_if(app()->isProduction(), 404);
+    }
+
     public function markAlpineReady(): void
     {
         $this->alpineReady = true;

@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Smoke;
 
+use App\Livewire\Smoke\FoundationSmoke;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Livewire\Livewire;
-use App\Livewire\Smoke\FoundationSmoke;
 use Tests\TestCase;
 
 class ApplicationSmokeTest extends TestCase

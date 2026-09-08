@@ -3,16 +3,18 @@
 namespace App\Models;
 
 use App\Enums\OrganizationRole;
+use Database\Factories\OrganizationMembershipFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['organization_id', 'user_id', 'role', 'joined_at', 'removed_at'])]
 class OrganizationMembership extends Model
 {
-    /** @use HasFactory<\Database\Factories\OrganizationMembershipFactory> */
+    /** @use HasFactory<OrganizationMembershipFactory> */
     use HasFactory;
 
     /**
@@ -55,5 +57,13 @@ class OrganizationMembership extends Model
     public function isActive(): bool
     {
         return $this->removed_at === null;
+    }
+
+    /**
+     * @return HasMany<EventAssignment, $this>
+     */
+    public function eventAssignments(): HasMany
+    {
+        return $this->hasMany(EventAssignment::class);
     }
 }

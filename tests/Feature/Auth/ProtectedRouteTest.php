@@ -28,6 +28,6 @@ class ProtectedRouteTest extends TestCase
             ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->get(route('app.dashboard'))
             ->assertOk()
-            ->assertSee($user->name, false);
+            ->assertSee($user->name);
     }
 }

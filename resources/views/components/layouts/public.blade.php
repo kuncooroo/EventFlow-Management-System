@@ -12,6 +12,8 @@
     @livewireStyles
 </head>
 <body class="min-h-screen bg-white text-slate-900 antialiased">
+    <x-demo-banner />
+
     <header class="border-b border-slate-200">
         <div class="mx-auto flex h-14 max-w-5xl items-center justify-between px-4 sm:px-6">
             <a href="{{ route('home') }}" class="text-sm font-semibold tracking-tight text-slate-900">

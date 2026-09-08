@@ -4,11 +4,16 @@ namespace App\Policies;
 
 use App\Models\Organization;
 use App\Models\User;
+use App\Support\Demo\DemoMode;
 
 class OrganizationPolicy
 {
     public function create(User $user): bool
     {
+        if (DemoMode::enabled()) {
+            return false;
+        }
+
         return true;
     }
 
@@ -31,5 +36,12 @@ class OrganizationPolicy
         $membership = $user->membershipIn($organization);
 
         return $membership !== null && $membership->role->canManageMembers();
+    }
+
+    public function manageSettings(User $user, Organization $organization): bool
+    {
+        $membership = $user->membershipIn($organization);
+
+        return $membership !== null && $membership->role->canManageSettings();
     }
 }

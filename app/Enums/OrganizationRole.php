@@ -37,6 +37,14 @@ enum OrganizationRole: string
         };
     }
 
+    public function canManageSettings(): bool
+    {
+        return match ($this) {
+            self::Owner, self::Admin => true,
+            default => false,
+        };
+    }
+
     /**
      * @return list<self>
      */

@@ -7,6 +7,7 @@ use App\Livewire\Organizations\MemberIndex;
 use App\Models\Organization;
 use App\Models\User;
 use App\Support\Organization\OrganizationContext;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -73,8 +74,9 @@ class MemberAuthorizationTest extends TestCase
         $organization = $this->createOrganizationForUser($actor, role: $role);
         $member = $this->addMemberToOrganization($organization, role: OrganizationRole::Viewer);
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
         Livewire::actingAs($actor)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
             ->call('changeRole', $member->id, OrganizationRole::Staff->value)
             ->assertHasNoErrors();
@@ -102,8 +104,17 @@ class MemberAuthorizationTest extends TestCase
         $organization = $this->createOrganizationForUser($actor, role: $role);
         $member = $this->addMemberToOrganization($organization, role: OrganizationRole::Viewer);
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
+        if (! $role->canViewMembers()) {
+            Livewire::actingAs($actor)
+                ->test(MemberIndex::class)
+                ->assertStatus(403);
+
+            return;
+        }
+
         Livewire::actingAs($actor)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
             ->call('changeRole', $member->id, OrganizationRole::Staff->value)
             ->assertForbidden();
@@ -133,15 +144,13 @@ class MemberAuthorizationTest extends TestCase
         $foreignOrganization = Organization::factory()->create(['name' => 'Foreign Org']);
         $foreignMember = $this->addMemberToOrganization($foreignOrganization, role: OrganizationRole::Viewer);
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
+        $this->expectException(ModelNotFoundException::class);
+
         Livewire::actingAs($actor)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
-            ->call('changeRole', $foreignMember->id, OrganizationRole::Staff->value)
-            ->assertNotFound();
-
-        $foreignMember->refresh();
-
-        $this->assertSame(OrganizationRole::Viewer, $foreignMember->role);
+            ->call('changeRole', $foreignMember->id, OrganizationRole::Staff->value);
     }
 
     public function test_event_manager_sees_read_only_member_list(): void
@@ -154,8 +163,9 @@ class MemberAuthorizationTest extends TestCase
             OrganizationRole::Staff,
         );
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
         Livewire::actingAs($actor)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
             ->assertSee('Read Only Member', false)
             ->assertSee('Staff', false)

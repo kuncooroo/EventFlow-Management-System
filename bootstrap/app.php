@@ -1,10 +1,11 @@
 <?php
 
+use App\Http\Middleware\EnsureOrganizationContext;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
-use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -13,11 +14,12 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withEvents()
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('app.dashboard'));
         $middleware->alias([
-            'organization' => \App\Http\Middleware\EnsureOrganizationContext::class,
+            'organization' => EnsureOrganizationContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -30,6 +32,10 @@ return Application::configure(basePath: dirname(__DIR__))
             $email = (string) $request->input('email');
 
             return Limit::perMinute(5)->by(strtolower($email).'|'.$request->ip());
+        });
+
+        RateLimiter::for('tickets', function (Request $request) {
+            return Limit::perMinute(20)->by($request->ip());
         });
     })
     ->create();

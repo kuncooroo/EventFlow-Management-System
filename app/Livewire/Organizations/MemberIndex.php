@@ -3,13 +3,17 @@
 namespace App\Livewire\Organizations;
 
 use App\Actions\Organizations\ChangeMemberRole;
+use App\Actions\Organizations\InviteMember;
 use App\Actions\Organizations\RemoveMember;
+use App\Actions\Organizations\RevokeInvitation;
 use App\Enums\OrganizationRole;
 use App\Http\Requests\Organizations\UpdateMemberRoleRequest;
 use App\Models\Organization;
+use App\Models\OrganizationInvitation;
 use App\Models\OrganizationMembership;
 use App\Support\Organization\OrganizationContext;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -27,6 +31,12 @@ class MemberIndex extends Component
 
     public ?string $statusMessage = null;
 
+    public bool $showInviteModal = false;
+
+    public string $inviteEmail = '';
+
+    public string $inviteRole = 'staff';
+
     public function mount(OrganizationContext $organizationContext): void
     {
         $user = auth()->user();
@@ -40,6 +50,60 @@ class MemberIndex extends Component
         $this->authorize('viewMembers', $organization);
         $this->canManageMembers = $user->can('manageMembers', $organization);
         $this->statusMessage = session('status');
+    }
+
+    public function openInviteModal(): void
+    {
+        $this->authorize('manageMembers', $this->organization);
+        $this->resetValidation();
+        $this->inviteEmail = '';
+        $this->inviteRole = OrganizationRole::Staff->value;
+        $this->showInviteModal = true;
+    }
+
+    public function closeInviteModal(): void
+    {
+        $this->showInviteModal = false;
+        $this->resetValidation();
+    }
+
+    public function sendInvite(InviteMember $inviteMember): void
+    {
+        $this->authorize('manageMembers', $this->organization);
+
+        $validated = $this->validate([
+            'inviteEmail' => ['required', 'string', 'email', 'max:254'],
+            'inviteRole' => ['required', 'string', Rule::enum(OrganizationRole::class)],
+        ], [], [
+            'inviteEmail' => 'email address',
+            'inviteRole' => 'role',
+        ]);
+
+        $email = $validated['inviteEmail'];
+
+        $inviteMember->handle(
+            $this->organization,
+            $email,
+            OrganizationRole::from($validated['inviteRole']),
+            auth()->user(),
+        );
+
+        $this->showInviteModal = false;
+        $this->inviteEmail = '';
+        $this->statusMessage = __('Invitation sent to :email.', ['email' => $email]);
+    }
+
+    public function revokeInvite(int $invitationId, RevokeInvitation $revokeInvitation): void
+    {
+        $this->authorize('manageMembers', $this->organization);
+
+        $invitation = OrganizationInvitation::query()
+            ->where('organization_id', $this->organization->id)
+            ->findOrFail($invitationId);
+
+        $revokeInvitation->handle($invitation, auth()->user(), $this->organization);
+
+        $this->statusMessage = __('Invitation revoked successfully.');
     }
 
     public function changeRole(int $membershipId, string $role, ChangeMemberRole $changeMemberRole): void
@@ -84,8 +148,18 @@ class MemberIndex extends Component
             ->orderBy('joined_at')
             ->get();
 
+        $pendingInvitations = $this->canManageMembers
+            ? OrganizationInvitation::query()
+                ->with('invitedBy')
+                ->where('organization_id', $this->organization->id)
+                ->pending()
+                ->latest()
+                ->get()
+            : collect();
+
         return view('livewire.organizations.member-index', [
             'memberships' => $memberships,
+            'pendingInvitations' => $pendingInvitations,
             'assignableRoles' => OrganizationRole::assignable(),
         ]);
     }

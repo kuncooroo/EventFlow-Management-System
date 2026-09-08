@@ -12,6 +12,8 @@
     @livewireStyles
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
+    <x-demo-banner />
+
     <div class="flex min-h-screen flex-col">
         <header class="border-b border-slate-200 bg-white">
             <div class="mx-auto flex h-14 max-w-lg items-center justify-between px-4">

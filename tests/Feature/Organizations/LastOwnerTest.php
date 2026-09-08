@@ -103,8 +103,9 @@ class LastOwnerTest extends TestCase
             $organization,
         );
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
         Livewire::actingAs($secondOwner)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
             ->call('changeRole', $secondMembership->id, OrganizationRole::Admin->value)
             ->assertHasErrors(['role']);
@@ -121,8 +122,9 @@ class LastOwnerTest extends TestCase
         $member = User::factory()->create();
         $membership = $this->addMemberToOrganization($organization, $member, OrganizationRole::Staff);
 
+        session([OrganizationContext::SESSION_KEY => $organization->id]);
+
         Livewire::actingAs($owner)
-            ->withSession([OrganizationContext::SESSION_KEY => $organization->id])
             ->test(MemberIndex::class)
             ->call('removeMember', $membership->id)
             ->assertHasNoErrors();

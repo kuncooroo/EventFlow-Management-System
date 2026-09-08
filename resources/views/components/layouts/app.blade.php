@@ -31,9 +31,13 @@
                 ])>
                     Dashboard
                 </a>
-                <span class="block rounded-md px-3 py-2 text-slate-400" title="Coming in later tasks">
+                <a href="{{ route('app.events.index') }}" @class([
+                    'block rounded-md px-3 py-2',
+                    'bg-slate-100 text-slate-900 font-medium' => request()->routeIs('app.events.*'),
+                    'text-slate-700 hover:bg-slate-100' => ! request()->routeIs('app.events.*'),
+                ])>
                     Events
-                </span>
+                </a>
                 @if (($currentMembership ?? null)?->role->canViewMembers())
                     <a href="{{ route('app.members.index') }}" @class([
                         'block rounded-md px-3 py-2',
@@ -43,12 +47,22 @@
                         Members
                     </a>
                 @endif
-                <span class="block rounded-md px-3 py-2 text-slate-400" title="Coming in later tasks">
+                <a href="{{ route('app.reports.registrations') }}" @class([
+                    'block rounded-md px-3 py-2',
+                    'bg-slate-100 text-slate-900 font-medium' => request()->routeIs('app.reports.*'),
+                    'text-slate-700 hover:bg-slate-100' => ! request()->routeIs('app.reports.*'),
+                ])>
                     Reports
-                </span>
-                <span class="block rounded-md px-3 py-2 text-slate-400" title="Coming in later tasks">
-                    Settings
-                </span>
+                </a>
+                @if (($currentMembership ?? null)?->role->canManageSettings())
+                    <a href="{{ route('app.settings.index') }}" @class([
+                        'block rounded-md px-3 py-2',
+                        'bg-slate-100 text-slate-900 font-medium' => request()->routeIs('app.settings.*'),
+                        'text-slate-700 hover:bg-slate-100' => ! request()->routeIs('app.settings.*'),
+                    ])>
+                        Settings
+                    </a>
+                @endif
                 <a href="{{ route('app.profile.edit') }}" @class([
                     'block rounded-md px-3 py-2',
                     'bg-slate-100 text-slate-900 font-medium' => request()->routeIs('app.profile.*'),
@@ -60,6 +74,8 @@
         </aside>
 
         <div class="flex min-w-0 flex-col">
+            <x-demo-banner />
+
             <header class="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
                 <div class="min-w-0">
                     @isset($header)
@@ -69,13 +85,19 @@
                     @endisset
                 </div>
                 <div class="flex items-center gap-3 text-sm">
-                    <a href="{{ route('app.profile.edit') }}" class="hidden text-slate-600 hover:text-slate-900 sm:inline">
-                        {{ auth()->user()->name }}
-                    </a>
-                    <form method="POST" action="{{ route('logout') }}">
-                        @csrf
-                        <x-button type="submit" variant="ghost" size="sm">Sign out</x-button>
-                    </form>
+                    @auth
+                        <a href="{{ route('app.profile.edit') }}" class="hidden text-slate-600 hover:text-slate-900 sm:inline">
+                            {{ auth()->user()->name }}
+                        </a>
+                        <form method="POST" action="{{ route('logout') }}">
+                            @csrf
+                            <x-button type="submit" variant="ghost" size="sm">Sign out</x-button>
+                        </form>
+                    @else
+                        <a href="{{ route('login') }}" class="text-sm font-medium text-teal-600 hover:text-teal-700">
+                            Log In
+                        </a>
+                    @endauth
                 </div>
             </header>
 

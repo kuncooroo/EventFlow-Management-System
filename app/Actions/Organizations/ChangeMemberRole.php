@@ -6,6 +6,7 @@ use App\Enums\OrganizationRole;
 use App\Models\Organization;
 use App\Models\OrganizationMembership;
 use App\Models\User;
+use App\Support\Demo\DemoGate;
 use App\Support\Organization\OrganizationOwnerGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,11 @@ class ChangeMemberRole
         User $actor,
         Organization $organization,
     ): OrganizationMembership {
+        DemoGate::denyOnDemoOrganization(
+            $organization->id,
+            __('Demo mode does not allow changing member roles.'),
+        );
+
         $this->assertMembershipInOrganization($membership, $organization);
         $this->assertActorCanManage($actor, $organization);
 
